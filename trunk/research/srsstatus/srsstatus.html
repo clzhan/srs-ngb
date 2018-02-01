@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<!--HTML5 doctype-->
+<html>
+
+<head>
+
+    <title></title>
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=0, minimal-ui">
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <META HTTP-EQUIV="Pragma" CONTENT="no-cache">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <link rel="stylesheet" type="text/css" href="build/icons.css" />
+    <link rel="stylesheet" type="text/css" href="build/af.ui.css" />
+
+    <script type="text/javascript" charset="utf-8" src="http://libs.baidu.com/jquery/2.1.1/jquery.min.js"></script>
+    <script type="text/javascript" charset="utf-8" src="build/fastclick.js"></script>
+    <script type="text/javascript" charset="utf-8" src="build/appframework.ui.min.js"></script>
+
+    <script>
+    $.afui.loadDefaultHash=true;
+    $.afui.autoLaunch=false;
+
+    //check search
+    // var search=document.location.search.toLowerCase().replace("?","");
+    var globalPlayer,isPlayerReady,timerId,curInterval;
+
+    //此变量设置刷新间隔
+    curInterval = 5000;
+
+    $.afui.useOSThemes=true;
+    $.afui.ready(function(){
+        $(document.body).get(0).className=("ios7");
+        getVhosts();
+
+    });
+
+    $(document).ready(function(){
+        $.afui.launch();
+    });
+
+    //if($.os.ios)
+        $.afui.animateHeader(true);
+
+    //定义主机地址
+    var urlRoot = "http://"+"10.10.6.175:1985"+"/api/v1/";
+    var vhostObj,streamsObj,summariesObj;
+
+    //jQuery.getJSON(url,data,success(data,status,xhr));
+    //获取 Vhosts 信息
+    function getVhosts (){
+        $.getJSON(urlRoot+"vhosts",function  (data,status,xhr) {
+            // console.log("get vhosts status is "+ status);
+            if ("success" == status ) {
+                if (data.vhosts.length > 0){
+                    var hostStr="",hostObj,firstChild,ele;
+                    for (var i = 0; i < data.vhosts.length; i++) {
+                        hostObj = data.vhosts[i];
+                        firstChild = "<h3>"+ hostObj.name +"   总接收："+Math.floor(hostObj.recv_bytes/1048576)+" MB  总发送："+ Math.floor(hostObj.send_bytes/1048576)+"MB </h3>";
+                        hostStr = '<div id="v'+hostObj.id+'">'+firstChild+"</div>";
+                        ele = document.getElementById("v"+hostObj.id);
+                        if (!ele ) {
+                            // console.log("v"+hostObj.id+" not exists");
+                            $('#vhostAndstream').append(hostStr);
+                        }else{
+                            // console.log("v"+hostObj.id+" exists");
+                            $('#v'+hostObj.id).find("h3").remove();
+                            $('#v'+hostObj.id).append(firstChild);
+                        };                        
+                    };
+                    
+                }
+                //接下来获取 stream；
+                getStreams();
+
+            } else{
+                $.afui.toast({
+                    message:"获取 Vhost 信息失败，请注意404错误不会触发此消息，错误信息是 ： "+status,
+                    position:"tc",
+                    delay:5000,
+                    autoClose:true,
+                    type:"error"
+                });
+            };
+
+        });
+    };
+    
+    //获取 streams 信息
+    function getStreams (){
+        $.getJSON(urlRoot+"streams",function(data,status,xhr){
+            // console.log("get streams status is "+ status);
+            if ("success" == status ) {
+                
+                if (data.streams.length > 0){                    
+                    var streamStr="",perStreamobj,audioInfo,videoInfo;
+                    for (var i = 0; i < data.streams.length; i++) {
+                        perStreamobj = data.streams[i];
+                        //如果对应的 vhost 层没有找到，则略过。因为有可能在获取 streams 期间，新增了 vhost；
+                        ele = document.getElementById("v"+perStreamobj.vhost);
+                        if (!ele) {
+                            continue ;
+                        };
+
+                        if (!perStreamobj.audio) {
+                            audioInfo = "无";
+                        }else{
+                            //audioInfo ="没有环境，不知道怎么解析。"+perStreamobj.audioInfo.toString();
+							 audioInfo = "无";
+                        };
+
+                        if (!perStreamobj.video) {
+                            videoInfo = "";
+                        }else{
+                            videoInfo ="视频编码: "+perStreamobj.video.codec+"/  "+
+                                       "编码profile : "+perStreamobj.video.profile+"/  "+
+                                       "编码level : "+  perStreamobj.video.level;
+                        };
+                        streamStr = "<p>媒体流:"+perStreamobj.name+"</p>"+
+                                    '<ul class="list inset" >'+
+                                    "<li>订阅数(如果开HLS切片会加1) : "+perStreamobj.clients+"</li>"+
+                                    "<li>总接收： "+Math.floor(perStreamobj.recv_bytes/1048576)+" MB"+"</li>"+
+                                    "<li>总发送： "+Math.floor(perStreamobj.send_bytes/1048576)+" MB"+"</li>"+
+                                    "<li>视频信息 ： "+videoInfo+" </li>"+
+                                    "<li>音频信息 ： "+audioInfo+" </li>"+
+                                    "</ul>";
+                        //重用ele。。小心，容易变量混乱。
+                        ele = document.getElementById("stream"+perStreamobj.id);
+                        if (!ele) {
+                            // console.log("stream"+perStreamobj.id+" not exists");
+                            $("#v"+perStreamobj.vhost).after('<div id="stream'+perStreamobj.id+'">'+streamStr+"</div>");                            
+                        } else{
+                            // console.log("stream"+perStreamobj.id+" exists");
+                            $("#stream"+perStreamobj.id).empty();
+                            $("#stream"+perStreamobj.id).append(streamStr);
+                        };
+                    };
+                    
+                }
+            } else{
+                $.afui.toast({
+                    message:"获取 streams 信息失败，请注意404错误不会触发此消息，错误信息是 ： "+status,
+                    position:"tc",
+                    delay:5000,
+                    autoClose:true,
+                    type:"error"
+                });
+            };  
+            //接下来获取summaries
+            getSummaries();          
+        });
+    };
+
+    //获取 summaries 信息
+    function getSummaries (){
+        $.getJSON(urlRoot+"summaries",function(data,status,xhr){
+            // console.log("get summaries status is "+ status);
+            if ("success" == status) {
+                var selfStr = "",sysStr="";
+
+                for (var key in data.data.self) {
+                    selfStr += "<li>"+key+" : "+data.data.self[key]+"</li> ";
+                };
+                $("#srsself").empty();
+                $("#srsself").append(selfStr);
+
+                for (var key in data.data.system) {
+                    sysStr += "<li>"+key+" : "+data.data.system[key]+"</li> ";
+                };
+                $("#serversystem").empty();
+                $("#serversystem").append(sysStr);
+                
+            } else{
+                $.afui.toast({
+                    message:"获取 summaries 信息失败，请注意404错误不会触发此消息，错误信息是 ： "+status,
+                    position:"tc",
+                    delay:5000,
+                    autoClose:true,
+                    type:"error"
+                });
+            };
+        });
+    }
+
+    timerId = self.setInterval("getVhosts()",5000);
+
+    </script>
+    
+    
+</head>
+
+<body >
+    <div id="splashscreen" class='ui-loader heavy'>
+                SRS 状态在线监视
+                <br>
+                <br>
+                <span class='ui-icon ui-icon-loading spin'></span>
+                <h1>启动</h1>
+
+            </div>
+    <div class="view" id="mainview">
+        <header>
+            <h1>SRS 状态监视</h1>
+        </header>
+        <div class="pages">
+            <div class="panel" id="main" data-title="SRS状态监视页面" data-selected="true">
+                <p id='main_info'>本页面主要功能是简单的了解媒体服务器的运行情况。</p>
+                
+                <div id='vhostAndstream'>
+                    <h2 >VHost 及其对应的流</h2>
+                    <hr id="vsappendlocation" />
+                    <div id="v32418"></div>
+                </div>
+                <div id='summaries'>
+                    <h2 >系统摘要</h2>
+                    <hr />
+                    <div>
+                        <div >
+                            <h3 >SRS进程信息</h3>
+                            <ul class="list inset" id="srsself">
+                            </ul>
+                        </div>
+                        <div >
+                            <h3 >服务器系统摘要</h3>
+                            <ul class="list inset" id="serversystem">
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div id='others'>
+                    <h2 >其他</h2>
+                    <hr id="otherappendlocation" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
